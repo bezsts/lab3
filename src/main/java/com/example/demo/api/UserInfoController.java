@@ -29,11 +29,17 @@ public class UserInfoController {
             Claims claims = jwtDecoder.decodeToken(token);
 
             String userId = claims.getSubject();
-            String username = claims.get("name", String.class);
+            String username = claims.get("displayName", String.class);
+            Map<String, Object> properties = claims.get("properties", Map.class);
+            String group = null;
+            if (properties != null) {
+                group = (String) properties.get("Group");
+            }
 
             Map<String, Object> userInfo = new HashMap<>();
             userInfo.put("userId", userId);
             userInfo.put("username", username);
+            userInfo.put("group", group);
 
             return ResponseEntity.ok(userInfo);
         } catch (Exception e) {

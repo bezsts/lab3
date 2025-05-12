@@ -35,7 +35,7 @@ public class AuthController {
                 "?client_id=" + openIdConnectProperties.getOpenIdConnectClientId() +
                 "&response_type=code" +
                 "&redirect_uri=" + redirectUri +
-                "&scope=openid profile email";
+                "&scope=openid";
         response.sendRedirect(authorizeUrl);
     }
 
