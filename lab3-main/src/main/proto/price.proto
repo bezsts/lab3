@@ -1,0 +1,8 @@
+syntax = "proto3";
+option java_multiple_files = true;
+package com.example.demo;
+
+message PriceUpdate {
+  string coin = 1;
+  int64 timestamp = 2;
+  double price = 3; }

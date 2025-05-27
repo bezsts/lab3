@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Cryptocurrency Prices</title>
+    <script src="//cdn.jsdelivr.net/npm/protobufjs@7.X.X/dist/protobuf.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        table { border-collapse: collapse; width: 50%; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .price-up { color: green; transition: color 0.3s; }
+        .price-down { color: red; transition: color 0.3s; }
+        .price-neutral { color: black; transition: color 0.3s; }
+    </style>
+</head>
+<body>
+<h1>Cryptocurrency Prices</h1>
+
+<div id="status">Not logged in</div>
+<button onclick="login()">🔐 Login</button>
+<br><br>
+<button onclick="getUserInfo()">👤 Get User Info</button>
+<br><br>
+<button onclick="startWebSocket()">📡 Start Receiving Prices</button>
+<br><br>
+
+<h2>Cryptocurrency Prices</h2>
+<table id="priceTable">
+    <thead>
+    <tr>
+        <th>Coin</th>
+        <th>Price</th>
+        <th>Timestamp</th>
+    </tr>
+    </thead>
+    <tbody id="priceBody"></tbody>
+</table>
+
+<pre id="userinfo"></pre>
+
+<script>
+    // Завантажуємо Protobuf схему
+    const root = protobuf.load("price.proto", function(err, root) {
+        if (err) throw err;
+    });
+
+    let ws = null;
+    let priceData = {};
+
+    function login() {
+        window.location.href = '/login';
+    }
+
+    window.onload = () => {
+        if (getCookie('access_token')) {
+            document.getElementById('status').innerText = 'Already logged in!';
+        }
+    };
+
+    async function getUserInfo() {
+        const token = getCookie('access_token');
+        if (!token) {
+            alert("You need to login first!");
+            return;
+        }
+
+        const response = await fetch("/userinfo", {
+            headers: {
+                'Authorization': token
+            }
+        });
+
+        const output = document.getElementById('userinfo');
+        if (response.ok) {
+            const data = await response.json();
+            output.innerText = JSON.stringify(data, null, 2);
+        } else {
+            output.innerText = 'Failed to get user info';
+        }
+    }
+
+    function getCookie(name) {
+        return document.cookie.split('; ')
+            .find(row => row.startsWith(name + '='))
+            ?.split('=')[1];
+    }
+
+    function startWebSocket() {
+        const token = getCookie('access_token');
+        if (!token) {
+            alert('Please login first');
+            return;
+        }
+
+        if (ws !== null && ws.readyState === WebSocket.OPEN) {
+            alert("Already connected to price feed.");
+            return;
+        }
+
+        ws = new WebSocket(`wss://localhost:8443/crypto-websocket?token=${encodeURIComponent(token)}`);
+
+        ws.onopen = function() {
+            console.log('WebSocket Connected');
+        };
+        let PriceUpdate;
+
+        ws.onmessage = async function(event) {
+            if (!root) {
+                console.error("Proto schema not loaded yet");
+                return;
+            }
+
+            if (!PriceUpdate) {
+                PriceUpdate = root.lookupType("com.example.demo.PriceUpdate");
+            }
+
+            try {
+                const buffer = event.data instanceof Blob ? await event.data.arrayBuffer() : event.data;
+                const message = PriceUpdate.decode(new Uint8Array(buffer));
+                const data = PriceUpdate.toObject(message, { defaults: true });
+
+                console.log("Decoded data:", data);
+
+                const priceValue = Number(data.price);
+                if (isNaN(priceValue)) {
+                    console.error("Invalid price value:", data.price);
+                    return;
+                }
+
+                updatePriceData(data.coin, priceValue, data.timestamp);
+                renderPriceTable();
+            } catch (e) {
+                console.error("Decoding error:", e);
+            }
+        };
+
+        const priceData = {};
+
+        function updatePriceData(coin, price, timestamp) {
+            priceData[coin] = { price, timestamp };
+        }
+
+        function renderPriceTable() {
+            const tbody = document.getElementById('priceBody');
+            let rows = '';
+
+            for (const coin in priceData) {
+                const { price, timestamp } = priceData[coin];
+
+                const previousPrice = priceData[coin]?.previous || price;
+                const priceClass = price > previousPrice ? 'price-up' :
+                                  price < previousPrice ? 'price-down' : 'price-neutral';
+
+                rows += `<tr>
+                    <td>${coin}</td>
+                    <td class="${priceClass}">${price.toFixed(2)}</td>
+                    <td>${new Date(timestamp).toLocaleTimeString()}</td>
+                </tr>`;
+
+                // Зберігаємо поточну ціну як попередню для наступного порівняння
+                priceData[coin].previous = price;
+            }
+
+            tbody.innerHTML = rows;
+        }
+
+        ws.onerror = function(error) {
+            console.error('WebSocket Error:', error);
+        };
+
+        ws.onclose = function() {
+            console.log('WebSocket Disconnected');
+            ws = null;
+        };
+    }
+</script>
+</body>
+</html>
